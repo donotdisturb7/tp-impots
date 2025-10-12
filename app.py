@@ -10,8 +10,9 @@ import numpy as np
 import pandas as pd
 from shiny import App, ui, render, reactive, req
 from shiny.types import ImgData
-import plotly.graph_objects as go
-from plotly.subplots import make_subplots
+import matplotlib.pyplot as plt
+import matplotlib
+matplotlib.use('Agg')  # Backend sans interface graphique
 import tempfile
 import os
 
@@ -22,29 +23,13 @@ from models.markov_model import MarkovPopulationModel
 from utils.bareme import get_bareme_2024
 
 
-def save_plotly_figure(fig, width=800, height=600):
-    """Helper pour sauvegarder une figure Plotly en PNG."""
-    try:
-        with tempfile.NamedTemporaryFile(suffix='.png', delete=False) as tmp:
-            fig.write_image(tmp.name, width=width, height=height)
-            return {"src": tmp.name}
-    except Exception as e:
-        # Fallback : créer un graphique simple avec matplotlib
-        import matplotlib.pyplot as plt
-        import matplotlib
-        matplotlib.use('Agg')  # Backend sans interface graphique
-        
-        fig_mpl, ax = plt.subplots(figsize=(width/100, height/100))
-        ax.text(0.5, 0.5, 'Graphique non disponible\n(Chrome requis pour Plotly)', 
-                ha='center', va='center', fontsize=12)
-        ax.set_xlim(0, 1)
-        ax.set_ylim(0, 1)
-        ax.axis('off')
-        
-        with tempfile.NamedTemporaryFile(suffix='.png', delete=False) as tmp:
-            fig_mpl.savefig(tmp.name, dpi=100, bbox_inches='tight')
-            plt.close(fig_mpl)
-            return {"src": tmp.name}
+def save_matplotlib_figure(fig, width=800, height=600):
+    """Helper pour sauvegarder une figure matplotlib en PNG."""
+    with tempfile.NamedTemporaryFile(suffix='.png', delete=False) as tmp:
+        fig.savefig(tmp.name, dpi=100, bbox_inches='tight', 
+                   facecolor='white', edgecolor='none')
+        plt.close(fig)  # Libérer la mémoire
+        return {"src": tmp.name}
 
 
 # Interface utilisateur
@@ -174,8 +159,14 @@ app_ui = ui.page_fluid(
                         8,
                         ui.card(
                             ui.card_header("Résultats de la simulation"),
-                            ui.output_text("resume_simulation"),
-                            ui.output_table("tableau_resultats")
+                            ui.div(
+                                ui.output_text("resume_simulation"),
+                                style="margin-bottom: 15px;"
+                            ),
+                            ui.div(
+                                ui.output_table("tableau_resultats"),
+                                style="max-height: 300px; overflow-y: auto; overflow-x: auto; border: 1px solid #ddd; padding: 5px;"
+                            )
                         )
                     )
                 ),
@@ -314,32 +305,30 @@ def server(input, output, session):
     @output
     @render.image
     def plot_taux():
-        """Graphique des taux d'imposition avec des lignes."""
-        # Créer un graphique en ligne simple
-        fig = go.Figure()
+        """Graphique des taux d'imposition avec matplotlib."""
+        # Créer un graphique matplotlib
+        fig, ax = plt.subplots(figsize=(8, 5))
         
         # Données des tranches
         tranches = [0, 11294, 28797, 82341, 177106, 300000]
         taux = [0, 0, 11, 30, 41, 45]
         
-        fig.add_trace(go.Scatter(
-            x=tranches,
-            y=taux,
-            mode='lines+markers',
-            name='Taux d\'imposition',
-            line=dict(color='blue', width=3),
-            marker=dict(size=8, color='red')
-        ))
+        # Tracer la ligne
+        ax.plot(tranches, taux, 'b-', linewidth=3, marker='o', 
+                markersize=8, markerfacecolor='red', markeredgecolor='darkred')
         
-        fig.update_layout(
-            title="Taux d'imposition par tranche",
-            xaxis_title="Revenu (€)",
-            yaxis_title="Taux (%)",
-            height=400,
-            template="plotly_white"
-        )
+        # Configuration du graphique
+        ax.set_title("Taux d'imposition par tranche", fontsize=14, fontweight='bold')
+        ax.set_xlabel("Revenu (€)", fontsize=12)
+        ax.set_ylabel("Taux (%)", fontsize=12)
+        ax.grid(True, alpha=0.3)
+        ax.set_xlim(0, 300000)
+        ax.set_ylim(0, 50)
         
-        return save_plotly_figure(fig, width=600, height=400)
+        # Formatage des axes
+        ax.ticklabel_format(style='plain', axis='x')
+        
+        return save_matplotlib_figure(fig, width=600, height=400)
     
     @output
     @render.image
@@ -366,8 +355,8 @@ def server(input, output, session):
         
         impot_brut *= parts
         
-        # Graphique en ligne
-        fig = go.Figure()
+        # Graphique matplotlib
+        fig, ax = plt.subplots(figsize=(8, 5))
         
         # Simulation de l'évolution de l'impôt selon le revenu
         revenus = np.linspace(0, revenu * 2, 50)
@@ -389,61 +378,44 @@ def server(input, output, session):
                 imp += (q - 11294) * 0.11
             impots.append(imp * parts)
         
-        fig.add_trace(go.Scatter(
-            x=revenus,
-            y=impots,
-            mode='lines',
-            name='Impôt selon le revenu',
-            line=dict(color='green', width=3)
-        ))
+        # Tracer la ligne
+        ax.plot(revenus, impots, 'g-', linewidth=3, label='Impôt selon le revenu')
         
         # Marquer le point actuel
-        fig.add_trace(go.Scatter(
-            x=[revenu],
-            y=[impot_brut],
-            mode='markers',
-            name='Votre situation',
-            marker=dict(size=12, color='red')
-        ))
+        ax.plot(revenu, impot_brut, 'ro', markersize=12, label='Votre situation')
         
-        fig.update_layout(
-            title="Évolution de l'impôt selon le revenu",
-            xaxis_title="Revenu (€)",
-            yaxis_title="Impôt (€)",
-            height=400,
-            template="plotly_white"
-        )
+        ax.set_title("Évolution de l'impôt selon le revenu", fontsize=14, fontweight='bold')
+        ax.set_xlabel("Revenu (€)", fontsize=12)
+        ax.set_ylabel("Impôt (€)", fontsize=12)
+        ax.grid(True, alpha=0.3)
+        ax.legend()
+        ax.ticklabel_format(style='plain')
         
-        return save_plotly_figure(fig, width=600, height=400)
+        return save_matplotlib_figure(fig, width=600, height=400)
     
     @output
     @render.image
     def plot_bareme():
-        """Graphique du barème fiscal avec des lignes."""
-        fig = go.Figure()
+        """Graphique du barème fiscal avec matplotlib."""
+        fig, ax = plt.subplots(figsize=(8, 5))
         
         # Données du barème 2024
         tranches = [0, 11294, 28797, 82341, 177106, 300000]
         taux = [0, 0, 11, 30, 41, 45]
         
-        fig.add_trace(go.Scatter(
-            x=tranches,
-            y=taux,
-            mode='lines+markers',
-            name='Barème fiscal 2024',
-            line=dict(color='purple', width=3),
-            marker=dict(size=8, color='orange')
-        ))
+        # Tracer la ligne avec marqueurs
+        ax.plot(tranches, taux, 'purple', linewidth=3, marker='o', 
+                markersize=8, markerfacecolor='orange', markeredgecolor='darkorange',
+                label='Barème fiscal 2024')
         
-        fig.update_layout(
-            title="Barème fiscal 2024",
-            xaxis_title="Revenu (€)",
-            yaxis_title="Taux d'imposition (%)",
-            height=400,
-            template="plotly_white"
-        )
+        ax.set_title("Barème fiscal 2024", fontsize=14, fontweight='bold')
+        ax.set_xlabel("Revenu (€)", fontsize=12)
+        ax.set_ylabel("Taux d'imposition (%)", fontsize=12)
+        ax.grid(True, alpha=0.3)
+        ax.legend()
+        ax.ticklabel_format(style='plain', axis='x')
         
-        return save_plotly_figure(fig, width=600, height=400)
+        return save_matplotlib_figure(fig, width=600, height=400)
     
     # === SIMULATION POPULATIONNELLE ===
     
@@ -535,36 +507,31 @@ def server(input, output, session):
         """Graphique d'évolution de la répartition."""
         results = simulation_results()
         if results is None:
-            fig = go.Figure()
-            fig.add_annotation(text="Lancez une simulation pour voir les résultats",
-                              xref="paper", yref="paper", x=0.5, y=0.5,
-                              showarrow=False, font_size=16)
-            return save_plotly_figure(fig)
+            fig, ax = plt.subplots(figsize=(8, 5))
+            ax.text(0.5, 0.5, "Lancez une simulation pour voir les résultats",
+                   ha='center', va='center', fontsize=14, transform=ax.transAxes)
+            ax.set_xlim(0, 1)
+            ax.set_ylim(0, 1)
+            ax.axis('off')
+            return save_matplotlib_figure(fig)
         
-        # Graphique simple d'évolution
-        fig = go.Figure()
+        # Graphique matplotlib d'évolution
+        fig, ax = plt.subplots(figsize=(8, 5))
         
         annees = list(range(input.duree() + 1))
         population = [1000000 * (1 + input.taux_croissance()/100)**i for i in annees]
         
-        fig.add_trace(go.Scatter(
-            x=annees,
-            y=population,
-            mode='lines+markers',
-            name='Évolution de la population',
-            line=dict(color='blue', width=3),
-            marker=dict(size=6)
-        ))
+        ax.plot(annees, population, 'b-', linewidth=3, marker='o', 
+               markersize=6, label='Évolution de la population')
         
-        fig.update_layout(
-            title="Évolution de la population",
-            xaxis_title="Années",
-            yaxis_title="Population",
-            height=400,
-            template="plotly_white"
-        )
+        ax.set_title("Évolution de la population", fontsize=14, fontweight='bold')
+        ax.set_xlabel("Années", fontsize=12)
+        ax.set_ylabel("Population", fontsize=12)
+        ax.grid(True, alpha=0.3)
+        ax.legend()
+        ax.ticklabel_format(style='plain', axis='y')
         
-        return save_plotly_figure(fig, width=600, height=400)
+        return save_matplotlib_figure(fig, width=600, height=400)
     
     @output
     @render.image
@@ -572,36 +539,30 @@ def server(input, output, session):
         """Graphique des indicateurs socio-économiques."""
         results = simulation_results()
         if results is None:
-            fig = go.Figure()
-            fig.add_annotation(text="Lancez une simulation pour voir les résultats",
-                              xref="paper", yref="paper", x=0.5, y=0.5,
-                              showarrow=False, font_size=16)
-            return save_plotly_figure(fig)
+            fig, ax = plt.subplots(figsize=(8, 5))
+            ax.text(0.5, 0.5, "Lancez une simulation pour voir les résultats",
+                   ha='center', va='center', fontsize=14, transform=ax.transAxes)
+            ax.set_xlim(0, 1)
+            ax.set_ylim(0, 1)
+            ax.axis('off')
+            return save_matplotlib_figure(fig)
         
-        # Graphique simple d'indicateurs
-        fig = go.Figure()
+        # Graphique matplotlib d'indicateurs
+        fig, ax = plt.subplots(figsize=(8, 5))
         
         annees = list(range(input.duree() + 1))
         gini = [0.3 + 0.1 * np.sin(i * 0.5) for i in annees]  # Simulation d'indice Gini
         
-        fig.add_trace(go.Scatter(
-            x=annees,
-            y=gini,
-            mode='lines+markers',
-            name='Indice de Gini',
-            line=dict(color='red', width=3),
-            marker=dict(size=6)
-        ))
+        ax.plot(annees, gini, 'r-', linewidth=3, marker='o', 
+               markersize=6, label='Indice de Gini')
         
-        fig.update_layout(
-            title="Évolution de l'indice de Gini",
-            xaxis_title="Années",
-            yaxis_title="Indice de Gini",
-            height=400,
-            template="plotly_white"
-        )
+        ax.set_title("Évolution de l'indice de Gini", fontsize=14, fontweight='bold')
+        ax.set_xlabel("Années", fontsize=12)
+        ax.set_ylabel("Indice de Gini", fontsize=12)
+        ax.grid(True, alpha=0.3)
+        ax.legend()
         
-        return save_plotly_figure(fig, width=600, height=400)
+        return save_matplotlib_figure(fig, width=600, height=400)
     
     @output
     @render.image
@@ -609,36 +570,32 @@ def server(input, output, session):
         """Graphique de la matrice de mobilité."""
         results = simulation_results()
         if results is None:
-            fig = go.Figure()
-            fig.add_annotation(text="Lancez une simulation pour voir les résultats",
-                              xref="paper", yref="paper", x=0.5, y=0.5,
-                              showarrow=False, font_size=16)
-            return save_plotly_figure(fig)
+            fig, ax = plt.subplots(figsize=(8, 5))
+            ax.text(0.5, 0.5, "Lancez une simulation pour voir les résultats",
+                   ha='center', va='center', fontsize=14, transform=ax.transAxes)
+            ax.set_xlim(0, 1)
+            ax.set_ylim(0, 1)
+            ax.axis('off')
+            return save_matplotlib_figure(fig)
         
-        # Graphique simple de mobilité
-        fig = go.Figure()
+        # Graphique matplotlib de mobilité
+        fig, ax = plt.subplots(figsize=(8, 5))
         
         categories = ['Très pauvres', 'Pauvres', 'Moyens', 'Aisés', 'Riches']
         mobilite = [0.8, 0.6, 0.4, 0.3, 0.2]  # Simulation de taux de mobilité
         
-        fig.add_trace(go.Scatter(
-            x=categories,
-            y=mobilite,
-            mode='lines+markers',
-            name='Taux de mobilité sociale',
-            line=dict(color='green', width=3),
-            marker=dict(size=8, color='purple')
-        ))
+        ax.plot(categories, mobilite, 'g-', linewidth=3, marker='o', 
+               markersize=8, markerfacecolor='purple', markeredgecolor='darkviolet',
+               label='Taux de mobilité sociale')
         
-        fig.update_layout(
-            title="Mobilité sociale par catégorie",
-            xaxis_title="Catégories de revenu",
-            yaxis_title="Taux de mobilité",
-            height=400,
-            template="plotly_white"
-        )
+        ax.set_title("Mobilité sociale par catégorie", fontsize=14, fontweight='bold')
+        ax.set_xlabel("Catégories de revenu", fontsize=12)
+        ax.set_ylabel("Taux de mobilité", fontsize=12)
+        ax.grid(True, alpha=0.3)
+        ax.legend()
+        plt.setp(ax.get_xticklabels(), rotation=45, ha='right')
         
-        return save_plotly_figure(fig, width=600, height=400)
+        return save_matplotlib_figure(fig, width=600, height=400)
     
     @output
     @render.image
@@ -646,48 +603,37 @@ def server(input, output, session):
         """Graphique de comparaison des modèles."""
         results = simulation_results()
         if results is None:
-            fig = go.Figure()
-            fig.add_annotation(text="Lancez une simulation pour voir les résultats",
-                              xref="paper", yref="paper", x=0.5, y=0.5,
-                              showarrow=False, font_size=16)
-            return save_plotly_figure(fig)
+            fig, ax = plt.subplots(figsize=(8, 5))
+            ax.text(0.5, 0.5, "Lancez une simulation pour voir les résultats",
+                   ha='center', va='center', fontsize=14, transform=ax.transAxes)
+            ax.set_xlim(0, 1)
+            ax.set_ylim(0, 1)
+            ax.axis('off')
+            return save_matplotlib_figure(fig)
         
-        # Graphique simple de comparaison
-        fig = go.Figure()
+        # Graphique matplotlib de comparaison
+        fig, ax = plt.subplots(figsize=(8, 5))
         
         annees = list(range(input.duree() + 1))
         
         # Modèle actuel
         population_actuel = [1000000 * (1 + input.taux_croissance()/100)**i for i in annees]
-        fig.add_trace(go.Scatter(
-            x=annees,
-            y=population_actuel,
-            mode='lines+markers',
-            name=f'Modèle {input.modele().upper()}',
-            line=dict(color='blue', width=3),
-            marker=dict(size=6)
-        ))
+        ax.plot(annees, population_actuel, 'b-', linewidth=3, marker='o', 
+               markersize=6, label=f'Modèle {input.modele().upper()}')
         
         # Modèle alternatif (simulation)
         population_alt = [1000000 * (1 + (input.taux_croissance()/100 + 0.01))**i for i in annees]
-        fig.add_trace(go.Scatter(
-            x=annees,
-            y=population_alt,
-            mode='lines+markers',
-            name='Modèle alternatif',
-            line=dict(color='red', width=3),
-            marker=dict(size=6)
-        ))
+        ax.plot(annees, population_alt, 'r-', linewidth=3, marker='o', 
+               markersize=6, label='Modèle alternatif')
         
-        fig.update_layout(
-            title="Comparaison des modèles",
-            xaxis_title="Années",
-            yaxis_title="Population",
-            height=400,
-            template="plotly_white"
-        )
+        ax.set_title("Comparaison des modèles", fontsize=14, fontweight='bold')
+        ax.set_xlabel("Années", fontsize=12)
+        ax.set_ylabel("Population", fontsize=12)
+        ax.grid(True, alpha=0.3)
+        ax.legend()
+        ax.ticklabel_format(style='plain', axis='y')
         
-        return save_plotly_figure(fig, width=600, height=400)
+        return save_matplotlib_figure(fig, width=600, height=400)
 
 
 # Création de l'application
