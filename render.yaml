@@ -2,7 +2,9 @@ services:
   - type: web
     name: model-math-app
     env: python
-    buildCommand: pip install -r requirements.txt
+    buildCommand: |
+      pip install -r requirements.txt
+      plotly_get_chrome
     startCommand: python run_app.py
     envVars:
       - key: HOST

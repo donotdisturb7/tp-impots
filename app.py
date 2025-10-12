@@ -24,9 +24,27 @@ from utils.bareme import get_bareme_2024
 
 def save_plotly_figure(fig, width=800, height=600):
     """Helper pour sauvegarder une figure Plotly en PNG."""
-    with tempfile.NamedTemporaryFile(suffix='.png', delete=False) as tmp:
-        fig.write_image(tmp.name, width=width, height=height)
-        return {"src": tmp.name}
+    try:
+        with tempfile.NamedTemporaryFile(suffix='.png', delete=False) as tmp:
+            fig.write_image(tmp.name, width=width, height=height)
+            return {"src": tmp.name}
+    except Exception as e:
+        # Fallback : créer un graphique simple avec matplotlib
+        import matplotlib.pyplot as plt
+        import matplotlib
+        matplotlib.use('Agg')  # Backend sans interface graphique
+        
+        fig_mpl, ax = plt.subplots(figsize=(width/100, height/100))
+        ax.text(0.5, 0.5, 'Graphique non disponible\n(Chrome requis pour Plotly)', 
+                ha='center', va='center', fontsize=12)
+        ax.set_xlim(0, 1)
+        ax.set_ylim(0, 1)
+        ax.axis('off')
+        
+        with tempfile.NamedTemporaryFile(suffix='.png', delete=False) as tmp:
+            fig_mpl.savefig(tmp.name, dpi=100, bbox_inches='tight')
+            plt.close(fig_mpl)
+            return {"src": tmp.name}
 
 
 # Interface utilisateur
