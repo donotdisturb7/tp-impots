@@ -2,6 +2,9 @@
 
 # Framework Shiny
 shiny>=0.5.0
+shinywidgets>=0.7.0
+shinywidgets>=0.7.0
+
 
 # Calcul scientifique
 numpy>=1.21.0
@@ -21,3 +24,4 @@ ipykernel>=6.0.0
 
 # Utilitaires
 typing-extensions>=3.10.0
+
